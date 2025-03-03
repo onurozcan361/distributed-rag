@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: weaviate-cluster-5
+  namespace: weaviate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: weaviate-cluster-5
+  template:
+    metadata:
+      labels:
+        app: weaviate-cluster-5
+    spec:
+      containers:
+      - name: weaviate
+        image: semitechnologies/weaviate:latest
+        ports:
+          - containerPort: 8080    # REST
+          - containerPort: 50051   # gRPC
+        env:
+          - name: QUERY_DEFAULTS_LIMIT
+            value: "20"
+          - name: GATEWAY_GRPC_ENABLED
+            value: "true"
+          - name: GATEWAY_GRPC_LISTENADDRESS
+            value: ":50051"  # Make sure it listens on the correct port
+
