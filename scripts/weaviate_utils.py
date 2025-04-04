@@ -40,7 +40,7 @@ def get_minikube_ip():
         print("Error fetching Minikube IP:", e)
         return None
 
-def check_cluster(http_host, http_port, grpc_host):
+def check_cluster(http_host, http_port, grpc_host, grpc_port):
     """
     Creates a Weaviate client for the cluster at the given IP and port,
     then checks if the cluster is ready.
@@ -75,9 +75,9 @@ def main():
 
     # Define the NodePorts for the 5 clusters
     ips = get_external_ips()
-    grpc_host = ips.pop("weaviate-grpc")
-    for name, ip in ips.items():
-        check_cluster(http_host=ip, http_port=8080, grpc_host=grpc_host)
+    grpc_host = ips.pop("grpc")
+    for name, svc in ips.items():
+        check_cluster(http_host=svc['ip'], http_port=svc['port'], grpc_host=grpc_host['ip'], grpc_port=grpc_host['port'])
 
 if __name__ == "__main__":
     main()
