@@ -62,8 +62,7 @@ def check_cluster(http_host, http_port, grpc_host, grpc_port):
             print(f"Cluster at host {http_host} is not ready.")
     except Exception as e:
         print(f"Error connecting to cluster at host {http_host}: {e}")
-        
-    client.close()
+    
 
 def main():
     minikube_ip = get_minikube_ip()
