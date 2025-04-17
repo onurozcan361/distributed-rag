@@ -30,6 +30,8 @@ def index_init(session_state) -> None:
     collection_name = session_state.collection_name
     bc_model = session_state.bc_model
 
+
+
     def index_batch_udf(partition_id: int, iterator):
         client = weaviate.connect_to_custom(
                 http_host=client_ips[partition_id],
@@ -43,10 +45,9 @@ def index_init(session_state) -> None:
         buffer = []
         batch_rows = []
 
-        model = bc_model
-        
-
         with torch.no_grad():
+            model = bc_model.to('cuda').eval()
+
             for row in iterator:
                 batch_rows.append(row)
 
@@ -55,10 +56,8 @@ def index_init(session_state) -> None:
 
                         texts = [r['chunk'] for r in batch_rows]
                         print(f"[{partition_id}] batch processing - > of {len(texts)}")
-                        embeddings = model.encode(texts, show_progress_bar=True)
-                        embeddings = embeddings
-                        # embeddings = embeddings.cpu().numpy()
-
+                        embeddings = model.encode(texts, show_progress_bar=True, device='cuda')
+                        
                         for i, row in enumerate(batch_rows):
                             obj = DataObject(
                                 properties={"file_name": row['file_name'], "context": row['chunk']},
@@ -79,7 +78,6 @@ def index_init(session_state) -> None:
                 try:
                     texts = [r['chunk'] for r in batch_rows]
                     embeddings = model.encode(texts, show_progress_bar=True)
-                    embeddings = embeddings
 
                     for i, row in enumerate(batch_rows):
                         obj = DataObject(
@@ -95,10 +93,22 @@ def index_init(session_state) -> None:
                     print(f"[{partition_id}] err final batch: {e}")
 
 
+                model = model.to('cpu')
+                torch.cuda.empty_cache()
+                
+
+
             client.close()
+
+ 
+
 
         return buffer
         
     df_chunks = chunk_text(spark, path="../Articles", chunk_size=64)
     df_chunks.repartition(len(client_ips)).rdd.mapPartitionsWithIndex(index_batch_udf, preservesPartitioning=True).count() ## map only
+    
+    
+
+    del df_chunks
 

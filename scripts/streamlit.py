@@ -10,8 +10,9 @@ import torch
 from rag import fetch_context, rag_init
 from weaviate_utils import host_init
 from index_chunks import index_init
+import os
 
-
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 ##ignore some warnings
 import warnings
@@ -45,7 +46,7 @@ def get_spark_session():
 def get_rag_model():
     if "rag_model" not in st.session_state:
         try:
-            st.session_state.bc_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').to('cuda').eval()
+            st.session_state.bc_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
         except Exception as e:
             st.error(f"Error creating RAG model: {e}")
             return None
@@ -92,7 +93,7 @@ if "initialized" not in st.session_state:
     index_init(st.session_state)
 
     st.session_state.initialized = True
-    print("Session initialized")
+    print("session initialized successfully. spark session -> " + str(st.session_state.spark))
     torch.cuda.empty_cache()
 
 # chat hist

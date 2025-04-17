@@ -7,7 +7,7 @@ from weaviate.classes.query import MetadataQuery
 
 from weaviate_utils import get_external_ips
 from pyspark.sql.functions import udf
-
+import torch
 
 REPARTITION_NUM = 5
 
@@ -37,7 +37,12 @@ bc_model_global = None
 @udf(returnType=vector_schema)
 def generate_embedding(query: str) -> list:
     try:
-        q_embedding = bc_model_global.value.encode(query).tolist()
+        with torch.no_grad():
+            bc_model_global.value.to('cuda').eval()
+            q_embedding = bc_model_global.value.encode(query).tolist()
+            bc_model_global.value.to('cpu')
+            torch.cuda.empty_cache()
+        
         return q_embedding
     except Exception as e:
         print(f"err: {e}")
@@ -57,14 +62,17 @@ def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_
             
             if not client.is_ready():
                 raise Exception("Weaviate instance is not ready.")
+            
 
-            chunks = client.collections.get(f"dist_data_{cluster_name[-1]}")
+            cluster_id = int(cluster_name[-1]) - 1
+            chunks = client.collections.get(f"dist_data_{cluster_id}")
     
             results = chunks.query.near_vector(
                 query_vector,
                 limit=1,
                 return_metadata=MetadataQuery(distance=True, certainty=True),
             )
+            torch.cuda.empty_cache()
 
             client.close()
         
