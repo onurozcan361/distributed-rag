@@ -14,10 +14,12 @@ from typing import List, Dict, Any
 import os
 from sentence_transformers import SentenceTransformer
 from weaviate.classes.query import MetadataQuery
+
 from weaviate_utils import get_external_ips
+from pyspark.sql.functions import udf
 
-os.environ["COLLECTION_RETRIEVAL_STRATEGY"] = "LocalOnly"
 
+REPARTITION_NUM = 5
 
 input_schema = StructType([
     StructField("name", StringType(), True),
@@ -32,23 +34,27 @@ output_schema = StructType([
     StructField("distance", FloatType(), True),
 ])
 
+output_schema_arr = ArrayType(output_schema)
 vector_schema = ArrayType(FloatType())
 
-generate_embedding_udf = F.udf(generate_embedding, vector_schema)
-search_weaviate_udf = F.udf(search_weaviate, ArrayType(output_schema))
 
-REPARTITION_NUM = 5
+client_ip_global = None
+grpc_host_global = None
+collection_name_global = None
+bc_model_global = None
 
 
-
+@udf(returnType=vector_schema)
 def generate_embedding(query: str) -> list:
     try:
-        q_embedding = embedding_model.encode(query).tolist()
+        q_embedding = bc_model_global.value.encode(query).tolist()
         return q_embedding
     except Exception as e:
         print(f"err: {e}")
         return []
 
+
+@udf(returnType=output_schema_arr)
 def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_ip:str, query_vector: list) -> dict:
     try:
         with  weaviate.connect_to_custom(    
@@ -97,20 +103,39 @@ def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_
     return return_arr
    
 
-# rag logic
-def fetch_context(query : str) -> List[str]:
+def rag_init(session_state) -> None:
+    global client_ip_global, grpc_host_global, collection_name_global, bc_model_global
+
+    spark = session_state.spark
+
+    client_ip_global = spark.sparkContext.broadcast(session_state.client_ips)
+    grpc_host_global = spark.sparkContext.broadcast(session_state.grpc_host)
+    collection_name_global = spark.sparkContext.broadcast(session_state.collection_name)
+    bc_model_global = spark.sparkContext.broadcast(session_state.bc_model)
+
+
+def fetch_context(session_state, query : str) -> List[str]:
+
+    spark = session_state.spark
+    services = get_external_ips()
+    grpc_ip = services["grpc"]["ip"]
+
+    print("spark session -> " + str(spark))
+
+    global client_ip_global, grpc_host_global, collection_name_global, bc_model_global
 
     df = spark.createDataFrame([services[service] for service in services if service != "grpc"], input_schema)  ## spark df yarat
     df = df.withColumn("query", F.col("query").cast(StringType())).withColumn("query", F.lit(query))            ## lit ile query'yi ekle
-    df = df.withColumn("query_embedding", generate_embedding_udf(F.col("query")))                               ## udf ile embeddingleri al
+    df = df.withColumn("query_embedding", generate_embedding(F.col("query")))                               ## udf ile embeddingleri al
 
-    df = df.withColumn("result_struct", search_weaviate_udf(
+    df = df.withColumn("result_struct", search_weaviate(
         F.col("name"),
         F.col("ip"),
         F.col("port"),
         F.lit(grpc_ip),
         F.col("query_embedding")
     ))
+
 
     df = df.withColumn("exploded_result", F.explode("result_struct")) \
     .withColumn("rag_text", F.col("exploded_result.rag_text")) \
@@ -122,96 +147,10 @@ def fetch_context(query : str) -> List[str]:
     result = df.select("rag_text", "certainity", "distance").first()
 
     return_dict = {
-        "rag_text": result.rag_text,
+        "rag_text": [result.rag_text],
         "certainity": result.certainity,
         "distance": result.distance
     }
 
     return return_dict
 
-
-# llm singleton
-def get_llm(model_name: str, base_url: str, temperature: float = 0.7):
-    if not hasattr(st.session_state, "llm"):
-        try:
-            st.session_state.llm = OllamaLLM(model=model_name, base_url=base_url, temperature=temperature)
-        except Exception as e:
-            st.error(f"Error creating LLM: {e}")
-            return None
-    return st.session_state.llm
-
-# response streaming, query template
-def generate_response(llm: OllamaLLM, prompt: str, context: List[str]):
-    context_text = "\n\n".join(context)
-    template = (
-        "You are an AI assistant. Use the following context to answer the question.\n\n"
-        "Context:\n{context}\n\n"
-        "Question:\n{prompt}\n\n"
-        "Answer:"
-    )
-    prompt_template = PromptTemplate(template=template, input_variables=["context", "prompt"])
-    final_prompt = prompt_template.format(context=context_text, prompt=prompt)
-
-    # Stream tokens
-    for chunk in llm.stream(final_prompt):
-        yield chunk
-
-
-
-
-
-
-
-spark = SparkSession.builder.appName("weaviate_deneme").getOrCreate()
-embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-services = get_external_ips()
-grpc_ip = services["grpc"]["ip"]
-
-# chat ui init
-st.set_page_config(page_title="Contextual Q&A Chat", layout="wide")
-st.title("🧠 Contextual Q&A Chat with Ollama LLM")
-
-# sidebar
-with st.sidebar:
-    st.header("Ollama Model Provider Settings")
-    model_name = st.text_input("Model Name", value="llama3.2:1b")
-    base_url = st.text_input("Base URL", value="http://localhost:11434")
-    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7)
-
-# chat hist
-if "history" not in st.session_state:
-    st.session_state.history = []
-
-# prev messsages
-for entry in st.session_state.history:
-    st.chat_message(entry["role"]).write(entry["message"])
-
-# user input
-user_input = st.chat_input("Enter your question...")
-
-if user_input:
-    # Record user message
-    st.session_state.history.append({"role": "user", "message": user_input})
-    st.chat_message("user").write(user_input)
-
-    # Prepare LLM and context
-    llm = get_llm(model_name, base_url, temperature)
-
-    if llm is None:
-        st.stop()
-
-    context_info = fetch_context(query=user_input)
-    ## burada distance ve certainity de var
-
-    # Stream assistant response in a single bubble
-    st.session_state.history.append({"role": "assistant", "message": ""})
-    # Display placeholder bubble
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        assistant_msg = ""
-        for token in generate_response(llm, user_input, context_info['rag_text']):
-            assistant_msg += token
-            # Update in place without repeating
-            placeholder.markdown(assistant_msg)
-        # After complete, ensure full message is in history
-        st.session_state.history[-1]["message"] = assistant_msg
