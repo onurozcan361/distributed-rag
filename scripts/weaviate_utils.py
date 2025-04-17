@@ -49,7 +49,7 @@ def close_all_clients():
             except Exception as e:
                 print(f"Error closing client for {service['ip']}: {e}")
 
-def host_init(session_state, delete=False):
+def host_init(session_state, delete=True):
     services = get_external_ips()
 
     session_state.grpc_host = services["grpc"]["ip"]

@@ -66,7 +66,7 @@ def index_init(session_state) -> None:
                             )
                             buffer.append(obj)
 
-                        client.collections.get(f"dist_data_{str(partition_id)}").data.insert_many(objects=buffer)
+                        client.collections.get(f"dist_data_{partition_id}").data.insert_many(objects=buffer)
                         print(f"[{partition_id}] Sent batch of {len(buffer)}")
 
                     except Exception as e:
@@ -88,7 +88,7 @@ def index_init(session_state) -> None:
                         )
                         buffer.append(obj)
 
-                    client.collections.get(f"dist_data{str(partition_id)}").data.insert_many(objects=buffer)
+                    client.collections.get(f"dist_data_{partition_id}").data.insert_many(objects=buffer)
                     print(f"[{partition_id}] Sent final batch of {len(buffer)}")
 
                 except Exception as e:
