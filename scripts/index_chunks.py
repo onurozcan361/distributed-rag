@@ -94,9 +94,9 @@ def index_init(session_state) -> None:
                 except Exception as e:
                     print(f"[{partition_id}] err final batch: {e}")
 
-
+            torch.cuda.empty_cache()
             client.close()
-
+        torch.cuda.empty_cache()
         return buffer
         
     df_chunks = chunk_text(spark, path="../Articles", chunk_size=64)

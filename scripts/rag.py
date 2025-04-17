@@ -4,7 +4,7 @@ from pyspark.sql.types import *
 import weaviate
 from typing import List
 from weaviate.classes.query import MetadataQuery
-
+import torch
 from weaviate_utils import get_external_ips
 from pyspark.sql.functions import udf
 
@@ -37,7 +37,11 @@ bc_model_global = None
 @udf(returnType=vector_schema)
 def generate_embedding(query: str) -> list:
     try:
-        q_embedding = bc_model_global.value.encode(query).tolist()
+        with torch.no_grad():
+            if bc_model_global is None:
+                raise Exception("Model not initialized.")
+            q_embedding = bc_model_global.value.encode(query).tolist()
+            torch.cuda.empty_cache()
         return q_embedding
     except Exception as e:
         print(f"err: {e}")
@@ -53,12 +57,12 @@ def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_
             http_secure=False,
             grpc_host=grpc_ip,
             grpc_port=50051,
-            grpc_secure=False)    as client:
+            grpc_secure=False) as client:
             
             if not client.is_ready():
                 raise Exception("Weaviate instance is not ready.")
-
-            chunks = client.collections.get(f"dist_data_{int(cluster_name[-1]) - 1} ")
+            
+            chunks = client.collections.get(f"dist_data_{int(cluster_name[-1]) - 1}")
     
             results = chunks.query.near_vector(
                 query_vector,
@@ -71,7 +75,7 @@ def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_
         del chunks, client
 
     except Exception as e:
-        print(f"Error connecting to Weaviate instance: {e}")
+        print(f"Error connecting to Weaviate instance {cluster_ip}: {e}")
         return []
     
     if not results:

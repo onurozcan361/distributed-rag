@@ -1,6 +1,7 @@
 import subprocess
 import weaviate
 import json
+from weaviate.classes.config import Configure
 
 def get_external_ips(namespace="weaviate"):
     # Run the kubectl command to get services in JSON format
@@ -56,27 +57,46 @@ def host_init(session_state, delete=True):
     session_state.client_ips = []
 
     for service in services.values():
-                if service['name'] != "grpc":
-                    session_state.client_ips.append(service['ip'])
-                    print(f"Service IP: {service['ip']}")
+        if service['name'] != "grpc":
+            session_state.client_ips.append(service['ip'])
+            print(f"Service IP: {service['ip']}")
+        
+            if delete:
+                try:
+                    client = weaviate.connect_to_custom(
+                        http_host=service['ip'],
+                        http_port=8080,
+                        http_secure=False,
+                        grpc_host=session_state.grpc_host,
+                        grpc_port=50051,
+                        grpc_secure=False
+                        )
+                    
+                    for i in range(5):
+                        client.collections.delete(f"dist_data_{i}")
+                    client.close()
+                    
+                except Exception as e:
+                    print(f"err -> {service['ip']}: {e}") 
                 
-                if delete:
+            
+            client = weaviate.connect_to_custom(
+                    http_host=service['ip'],
+                    http_port=8080,
+                    http_secure=False,
+                    grpc_host=session_state.grpc_host,
+                    grpc_port=50051,
+                    grpc_secure=False
+                    )
+            for i in range(5):
+                if not client.collections.exists(f"dist_data_{i}"):
                     try:
-                        client = weaviate.connect_to_custom(
-                            http_host=service['ip'],
-                            http_port=8080,
-                            http_secure=False,
-                            grpc_host=session_state.grpc_host,
-                            grpc_port=50051,
-                            grpc_secure=False
-                            )
-                        
-
-                        for i in range(5):
-                            client.collections.delete(f"dist_data_{i}")
-                        client.close()
+                        client.collections.create(name=f"dist_data_{i}", vectorizer_config = Configure.Vectorizer.none())
                     except Exception as e:
-                        print(f"err -> {service['ip']}: {e}") 
+                        print(f"Error creating collection {i} on {service['ip']}: {e}")
+            client.close()
+            
+                    
 
 
 def get_minikube_ip():
