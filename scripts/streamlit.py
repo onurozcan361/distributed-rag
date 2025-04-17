@@ -3,35 +3,21 @@ from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 from typing import List
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
 from pyspark.sql.types import *
-import subprocess
-import weaviate
-import json
-import pandas as pd
-import random
-from typing import List, Dict, Any
-import os
+from typing import List
 from sentence_transformers import SentenceTransformer
-from weaviate.classes.query import MetadataQuery
-
+import torch
 from rag import fetch_context, rag_init
-from weaviate_utils import get_external_ips, host_init
+from weaviate_utils import host_init
 from index_chunks import index_init
 
 
 
 ##ignore some warnings
-
 import warnings
 
 warnings.filterwarnings("ignore", message=".*no running event loop.*")
 warnings.filterwarnings("ignore", message=".*Uncaught app execution.*")
-
-
-
-
-
 
 # llm singleton
 def get_llm(model_name: str, base_url: str, temperature: float = 0.7):
@@ -48,8 +34,8 @@ def get_spark_session():
         try:
             st.session_state.spark = SparkSession.builder \
                 .appName("weaviate_deneme") \
-                .config("spark.driver.memory", "8g") \
-                .config("spark.executor.memory", "8g") \
+                .config("spark.driver.bindAddress", "127.0.0.1") \
+                .config("spark.driver.host", "127.0.0.1") \
                 .getOrCreate()
         except Exception as e:
             st.error(f"Error creating Spark session: {e}")
@@ -101,16 +87,13 @@ if "initialized" not in st.session_state:
     _ = get_rag_model()
     _ = get_spark_session()
 
-
-    
-
     host_init(st.session_state)
     rag_init(st.session_state)
     index_init(st.session_state)
 
-
     st.session_state.initialized = True
     print("Session initialized")
+    torch.cuda.empty_cache()
 
 # chat hist
 if "history" not in st.session_state:

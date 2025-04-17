@@ -8,26 +8,9 @@
 # logging.getLogger("pyspark").setLevel(logging.ERROR)
 
 import weaviate
-from sentence_transformers import SentenceTransformer
 from weaviate.classes.data import DataObject
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import explode, spark_partition_id
-from pyspark.sql import functions as F
-import subprocess
-import json
-import pandas as pd
-
 from text_chunker import chunk_text
-from weaviate_utils import get_external_ips
-
-from pyspark.sql.dataframe import DataFrame
 import torch
-from tqdm import tqdm
-import torch
-from weaviate.classes.data import DataObject
-
-from pyspark.sql.types import StringType, ArrayType, FloatType
-from pyspark.sql import udf
 
 client_ips = None
 grpc_host = None
@@ -46,8 +29,6 @@ def index_init(session_state) -> None:
     grpc_host = session_state.grpc_host
     collection_name = session_state.collection_name
     bc_model = session_state.bc_model
-
-
 
     def index_batch_udf(partition_id: int, iterator):
         client = weaviate.connect_to_custom(
@@ -118,16 +99,6 @@ def index_init(session_state) -> None:
 
         return buffer
         
-
-
-
-
-
-
-
-
-
-
     df_chunks = chunk_text(spark, path="../Articles", chunk_size=64)
     df_chunks.repartition(len(client_ips)).rdd.mapPartitionsWithIndex(index_batch_udf, preservesPartitioning=True).count() ## map only
 
