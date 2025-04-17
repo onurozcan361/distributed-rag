@@ -56,6 +56,15 @@ def get_spark_session():
             return None
     return st.session_state.spark
 
+def get_rag_model():
+    if "rag_model" not in st.session_state:
+        try:
+            st.session_state.bc_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').to('cuda').eval()
+        except Exception as e:
+            st.error(f"Error creating RAG model: {e}")
+            return None
+    return st.session_state.bc_model
+
 # response streaming, query template
 def generate_response(llm: OllamaLLM, prompt: str, context: List[str]):
     context_text = "\n\n".join(context)
@@ -86,29 +95,22 @@ with st.sidebar:
 
 
 if "initialized" not in st.session_state:
-    st.session_state.spark = SparkSession.builder \
-                .appName("weaviate_deneme") \
-                .config("spark.driver.memory", "8g") \
-                .config("spark.executor.memory", "8g") \
-                .getOrCreate()
-            
-    st.session_state.bc_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').to('cuda').eval()
+
     st.session_state.collection_name = "dist_data"
 
+    _ = get_rag_model()
+    _ = get_spark_session()
 
+
+    
 
     host_init(st.session_state)
     rag_init(st.session_state)
     index_init(st.session_state)
 
 
-
-
     st.session_state.initialized = True
     print("Session initialized")
-
-
-
 
 # chat hist
 if "history" not in st.session_state:
@@ -125,10 +127,11 @@ if user_input:
 
     st.session_state.history.append({"role": "user", "message": user_input})
     st.chat_message("user").write(user_input)
+    
 
-
-    spark = get_spark_session()
     llm = get_llm(model_name, base_url, temperature)
+    rag_model = get_rag_model()
+    spark = get_spark_session()
 
     if llm is None:
         st.stop()
@@ -137,8 +140,6 @@ if user_input:
         print("Error creating Spark session")
         st.stop()
 
-  
-            
     context_info = fetch_context(session_state = st.session_state, query=user_input)
     
     ## burada distance ve certainity de var

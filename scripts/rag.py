@@ -104,14 +104,13 @@ def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_
    
 
 def rag_init(session_state) -> None:
-    global client_ip_global, grpc_host_global, collection_name_global, bc_model_global
+    global client_ip_global, grpc_host_global, collection_name_global
 
     spark = session_state.spark
 
     client_ip_global = spark.sparkContext.broadcast(session_state.client_ips)
     grpc_host_global = spark.sparkContext.broadcast(session_state.grpc_host)
     collection_name_global = spark.sparkContext.broadcast(session_state.collection_name)
-    bc_model_global = spark.sparkContext.broadcast(session_state.bc_model)
 
 
 def fetch_context(session_state, query : str) -> List[str]:
@@ -123,6 +122,8 @@ def fetch_context(session_state, query : str) -> List[str]:
     print("spark session -> " + str(spark))
 
     global client_ip_global, grpc_host_global, collection_name_global, bc_model_global
+
+    bc_model_global = spark.sparkContext.broadcast(session_state.bc_model)
 
     df = spark.createDataFrame([services[service] for service in services if service != "grpc"], input_schema)  ## spark df yarat
     df = df.withColumn("query", F.col("query").cast(StringType())).withColumn("query", F.lit(query))            ## lit ile query'yi ekle
@@ -151,6 +152,8 @@ def fetch_context(session_state, query : str) -> List[str]:
         "certainity": result.certainity,
         "distance": result.distance
     }
+
+    del df, result, bc_model_global
 
     return return_dict
 
