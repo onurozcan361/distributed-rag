@@ -14,6 +14,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, ArrayType
 from pyspark.sql.functions import udf, col
 
+from pyspark.sql import SparkSession
+
 # Metin okuma fonksiyonu (değişmedi)
 def read_txt_file(file_path: str) -> str:
     try:
@@ -56,13 +58,7 @@ def chunk_text_on_tokens(
         print(f"Error in chunking text: {e}")
         return []
 
-def chunk_text():
-    # 1) SparkSession oluştur
-    spark = SparkSession.builder \
-        .appName("TextChunking") \
-        .config("spark.driver.bindAddress", "127.0.0.1") \
-        .config("spark.driver.host", "127.0.0.1") \
-        .getOrCreate()
+def chunk_text(spark : SparkSession, path="../Articles", chunk_size=128) -> None:
 
     # 2) Tokenizer'ı driver tarafında yükle, broadcast et
     tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
@@ -72,13 +68,13 @@ def chunk_text():
     def chunk_text_worker(text: str) -> List[str]:
         # Worker tarafında broadcast nesnesine erişiliyor
         _tokenizer = bc_tokenizer.value
-        return chunk_text_on_tokens(text=text, tokenizer=_tokenizer, chunk_size=128, chunk_overlap=20)
+        return chunk_text_on_tokens(text=text, tokenizer=_tokenizer, chunk_size=chunk_size, chunk_overlap=20)
 
     chunk_text_udf = udf(chunk_text_worker, ArrayType(StringType()))
 
     # 4) Klasörlerden .txt dosyalarını okuyarak DataFrame oluştur
     texts = []
-    articles_path = "../Articles"
+    articles_path = path
     if os.path.isdir(articles_path):
         for folder in os.listdir(articles_path):
             folder_path = os.path.join(articles_path, folder)
@@ -94,9 +90,11 @@ def chunk_text():
         StructField("file_name", StringType(), True),
         StructField("text", StringType(), True)
     ])
+
+    from pyspark.sql import functions as F
+
     df = spark.createDataFrame(texts, schema=schema)
+    df = df.withColumn("chunks", chunk_text_udf(col("text")))
+    df = df.select("file_name", F.explode("chunks").alias("chunk"))
 
-    # 5) UDF'yi uygulayarak "chunks" sütununu oluştur, orijinal "text" sütununu drop et
-    df_result = df.repartition(5).withColumn("chunks", chunk_text_udf(col("text"))).drop("text")
-
-    return df_result
+    return df
