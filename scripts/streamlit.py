@@ -5,6 +5,7 @@ from pyspark.sql.types import *
 from langchain_ollama import OllamaLLM
 from langchain.prompts import PromptTemplate
 from typing import List
+<<<<<<< HEAD:scripts/generation.py
 from indexer import index_chunks
 from weaviate_utils import get_external_ips
 from weaviate.classes.query import MetadataQuery
@@ -222,6 +223,26 @@ except Exception as e:
     st.error(f"Error during startup processing: {e}")
 
 # Initialize or recreate LLM singleton whenever config changes
+=======
+from pyspark.sql import SparkSession
+from pyspark.sql.types import *
+from typing import List
+from sentence_transformers import SentenceTransformer
+import torch
+from rag import fetch_context, rag_init
+from weaviate_utils import host_init
+from index_chunks import index_init
+
+
+
+##ignore some warnings
+import warnings
+
+warnings.filterwarnings("ignore", message=".*no running event loop.*")
+warnings.filterwarnings("ignore", message=".*Uncaught app execution.*")
+
+# llm singleton
+>>>>>>> 2513a2d2912a8fe0907cf525ffcedfd4f9da8cbb:scripts/streamlit.py
 def get_llm(model_name: str, base_url: str, temperature: float = 0.7):
     # If an llm already exists, check if its config has changed
     if "llm" in st.session_state:
@@ -260,9 +281,32 @@ def get_llm(model_name: str, base_url: str, temperature: float = 0.7):
 
     return st.session_state.llm
 
-# Stream the response from the LLM using provided context and prompt
+def get_spark_session():
+    if "spark" not in st.session_state:
+        try:
+            st.session_state.spark = SparkSession.builder \
+                .appName("weaviate_deneme") \
+                .config("spark.driver.bindAddress", "127.0.0.1") \
+                .config("spark.driver.host", "127.0.0.1") \
+                .getOrCreate()
+        except Exception as e:
+            st.error(f"Error creating Spark session: {e}")
+            return None
+    return st.session_state.spark
+
+def get_rag_model():
+    if "rag_model" not in st.session_state:
+        try:
+            st.session_state.bc_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2').to('cuda').eval()
+        except Exception as e:
+            st.error(f"Error creating RAG model: {e}")
+            return None
+    return st.session_state.bc_model
+
+# response streaming, query template
 def generate_response(llm: OllamaLLM, prompt: str, context: List[str]):
     context_text = "\n\n".join(context)
+
     template = (
         "You are an AI assistant. Use the following context to answer the question.\n\n"
         "Context:\n{context}\n\n"
@@ -279,10 +323,16 @@ def generate_response(llm: OllamaLLM, prompt: str, context: List[str]):
     for chunk in llm.stream(final_prompt):
         yield chunk
 
+<<<<<<< HEAD:scripts/generation.py
 # Streamlit Chat UI
 
+=======
+# chat ui init
+st.set_page_config(page_title="Contextual Q&A Chat", layout="wide")
+st.title("🧠 Contextual Q&A Chat with Ollama LLM")
+>>>>>>> 2513a2d2912a8fe0907cf525ffcedfd4f9da8cbb:scripts/streamlit.py
 
-# Sidebar settings
+# sidebar
 with st.sidebar:
     st.header("Ollama Model Provider Settings")
     model_name = st.selectbox(
@@ -303,33 +353,67 @@ with st.sidebar:
         key="ui_temperature"
     )
 
-# Initialize chat history
+
+if "initialized" not in st.session_state:
+
+    st.session_state.collection_name = "dist_data"
+
+    _ = get_rag_model()
+    _ = get_spark_session()
+
+    host_init(st.session_state)
+    rag_init(st.session_state)
+    index_init(st.session_state)
+
+    st.session_state.initialized = True
+    print("Session initialized")
+    torch.cuda.empty_cache()
+
+# chat hist
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# Display previous messages
+# prev messsages
 for entry in st.session_state.history:
     st.chat_message(entry["role"]).write(entry["message"])
 
-# Capture user input
+# user input
 user_input = st.chat_input("Enter your question...")
+
 if user_input:
-    # Record user message
+
     st.session_state.history.append({"role": "user", "message": user_input})
     st.chat_message("user").write(user_input)
+    
 
-    # Prepare LLM and context
     llm = get_llm(model_name, base_url, temperature)
+    rag_model = get_rag_model()
+    spark = get_spark_session()
+
     if llm is None:
         st.stop()
+<<<<<<< HEAD:scripts/generation.py
     context_chunks = fetch_context(spark=spark, query=user_input)
+=======
+>>>>>>> 2513a2d2912a8fe0907cf525ffcedfd4f9da8cbb:scripts/streamlit.py
 
+    if spark is None:
+        print("Error creating Spark session")
+        st.stop()
+
+    context_info = fetch_context(session_state = st.session_state, query=user_input)
+    
+    ## burada distance ve certainity de var
     # Stream assistant response in a single bubble
     st.session_state.history.append({"role": "assistant", "message": ""})
     with st.chat_message("assistant"):
         placeholder = st.empty()
         assistant_msg = ""
+<<<<<<< HEAD:scripts/generation.py
         for token in generate_response(llm, user_input, context_chunks['rag_text']):
+=======
+        for token in generate_response(llm, user_input, context_info['rag_text']):
+>>>>>>> 2513a2d2912a8fe0907cf525ffcedfd4f9da8cbb:scripts/streamlit.py
             assistant_msg += token
             placeholder.markdown(assistant_msg)
         # After complete, ensure full message is in history
