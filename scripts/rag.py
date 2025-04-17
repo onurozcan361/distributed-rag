@@ -58,7 +58,7 @@ def search_weaviate(cluster_name: str, cluster_ip: str, cluster_port: str, grpc_
             if not client.is_ready():
                 raise Exception("Weaviate instance is not ready.")
 
-            chunks = client.collections.get(f"dist_data_{cluster_name[-1]}")
+            chunks = client.collections.get(f"dist_data_{cluster_name[-1]-1} ")
     
             results = chunks.query.near_vector(
                 query_vector,

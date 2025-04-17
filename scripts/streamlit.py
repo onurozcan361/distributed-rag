@@ -173,7 +173,7 @@ if user_input:
         st.stop()
 
     context_info = fetch_context(session_state = st.session_state, query=user_input)
-    
+    print("Context info:", context_info)
     ## burada distance ve certainity de var
     # Stream assistant response in a single bubble
     st.session_state.history.append({"role": "assistant", "message": ""})
