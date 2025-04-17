@@ -17,9 +17,8 @@ import subprocess
 import json
 import pandas as pd
 
-from scripts.text_chunker import chunk_text
-from scripts.weaviate_utils import get_external_ips
-
+from text_chunker import chunk_text
+from weaviate_utils import get_external_ips
 
 from pyspark.sql.dataframe import DataFrame
 import torch
@@ -90,7 +89,7 @@ def index_batch_udf(partition_id: int, iterator):
 
     global client_ip_global, grpc_host_global, collection_name_global, bc_model_global
 
-    print(f"partition ID -> {partition_id}")
+    print(f"partition ID -> {partition_id}\n")
 
     if client_ip_global is None:
         print("client_ip_global is None")
@@ -189,8 +188,8 @@ if __name__ == "__main__":
     collection_name_global = spark.sparkContext.broadcast(collection_name)
     bc_model_global = spark.sparkContext.broadcast(bc_model)
     
-    df_chunks = chunk_text(spark, path="./Articles", chunk_size=64)
+    df_chunks = chunk_text(spark, path="../Articles", chunk_size=64)
     df_chunks.cache()
-    df_chunks.repartition(5).rdd.mapPartitionsWithIndex(index_batch_udf, preservesPartitioning=True).count() ## map only
+    df_chunks.repartition(len(client_ips)).rdd.mapPartitionsWithIndex(index_batch_udf, preservesPartitioning=True).count() ## map only
 
     spark.stop()
